@@ -1,0 +1,24 @@
+{% macro post_button(action, label, fields={}, cls='', title='', next=None) -%}
+<form method="post" action="{{ action }}" class="inline">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% for name, value in fields.items() %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+  <input type="hidden" name="next" value="{{ next or request.path }}">
+  <button type="submit" class="{{ cls }}" title="{{ title or label }}" aria-label="{{ title or label }}">{{ label }}</button>
+</form>
+{%- endmacro %}
+
+{% macro due_label(task) -%}
+  {% if task.due_date %}
+    {% set state = due_state(task) %}
+    <span class="due {{ state or '' }}">
+      {%- if state == 'overdue' %}Overdue · {% elif state == 'today' %}Today · {% elif state == 'tomorrow' %}Tomorrow · {% endif -%}
+      {{ human_date(task.due_date) }}
+    </span>
+  {% endif %}
+{%- endmacro %}
+
+{% macro source_tag(task) -%}
+  {% if task.source == 'github' %}<span class="tag">PR</span>
+  {% elif task.source == 'claude' %}<span class="tag">Claude</span>
+  {% elif task.source == 'recurring' or task.recurrence != 'none' %}<span class="tag">↻ {{ task.recurrence }}</span>{% endif %}
+{%- endmacro %}

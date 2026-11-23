@@ -1,0 +1,16 @@
+[Unit]
+Description=Corkboard print worker, scheduler and GitHub poll
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=@USER@
+SupplementaryGroups=lp
+WorkingDirectory=@DIR@
+ExecStart=@DIR@/.venv/bin/python -m worker.worker
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

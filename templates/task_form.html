@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit #%s'|format(task.id) if task else 'New task' }} · Corkboard{% endblock %}
+{% block content %}
+<div class="split">
+  <form method="post" class="panel task-form" id="task-form">
+    <h1>{{ 'Edit #%s'|format(task.id) if task else 'New task' }}</h1>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Title
+      <input name="title" required maxlength="200" autofocus value="{{ values.title or '' }}" autocomplete="off">
+    </label>
+    <label>Description
+      <textarea name="description" rows="4" maxlength="2000">{{ values.description or '' }}</textarea>
+    </label>
+    <div class="row">
+      <label>Due date
+        <input type="date" name="due_date" value="{{ values.due_date or '' }}">
+      </label>
+      <label>Repeats
+        <select name="recurrence">
+          {% for r in ['none', 'daily', 'weekdays', 'weekly', 'monthly'] %}
+            <option value="{{ r }}" {{ 'selected' if (values.recurrence or 'none') == r }}>{{ 'never' if r == 'none' else r }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <fieldset class="priority-picker">
+      <legend>Priority</legend>
+      {% for p in ['low', 'medium', 'high'] %}
+        <label class="pill prio-{{ p }}"><input type="radio" name="priority" value="{{ p }}" {{ 'checked' if (values.priority or 'medium') == p }}> {{ p }}</label>
+      {% endfor %}
+    </fieldset>
+    <label class="check"><input type="checkbox" name="print_card" value="1" {{ 'checked' if print_default }}> {{ 'Reprint the card after saving' if task else 'Print the card now' }}</label>
+    <div class="actions">
+      <button type="submit" class="primary">{{ 'Save' if task else 'Add task' }}</button>
+      <a href="{{ url_for('web.task_detail', task_id=task.id) if task else url_for('web.board') }}" class="button">Cancel</a>
+    </div>
+  </form>
+  <aside class="panel preview">
+    <h2>Card preview</h2>
+    <div class="paper"><img id="preview" alt="Card preview" src="{{ url_for('web.card_png', task_id=task.id) if task else url_for('web.preview_png') }}"></div>
+  </aside>
+</div>
+<script>
+(() => {
+  const form = document.getElementById('task-form');
+  const img = document.getElementById('preview');
+  const base = {{ url_for('web.preview_png')|tojson }};
+  const extra = {{ ({'id': task.id, 'source': task.source} if task else {})|tojson }};
+  let timer;
+  const refresh = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const data = new FormData(form);
+      const params = new URLSearchParams(extra);
+      for (const key of ['title', 'description', 'due_date', 'priority', 'recurrence']) params.set(key, data.get(key) || '');
+      img.src = base + '?' + params.toString();
+    }, 350);
+  };
+  form.addEventListener('input', refresh);
+  form.addEventListener('change', refresh);
+})();
+</script>
+{% endblock %}

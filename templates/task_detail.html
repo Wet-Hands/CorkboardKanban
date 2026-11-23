@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "_macros.html" import post_button, due_label, source_tag with context %}
+{% block title %}#{{ task.id }} {{ task.title }} · Corkboard{% endblock %}
+{% block content %}
+<div class="split">
+  <section class="panel detail prio-{{ task.priority }}">
+    <div class="note-head">
+      <span class="prio">{{ task.priority }}</span>
+      {{ source_tag(task) }}
+      <span class="status-chip status-{{ task.status }}">{{ status_labels[task.status] }}</span>
+      <span class="id">#{{ task.id }}</span>
+    </div>
+    <h1>{{ task.title }}</h1>
+    {% if task.description %}<p class="desc">{{ task.description }}</p>{% endif %}
+    <p>{{ due_label(task) }}</p>
+    {% if task.url %}<p><a href="{{ task.url }}" target="_blank" rel="noopener">{{ 'Open the pull request' if task.source == 'github' else task.url }} ↗</a></p>{% endif %}
+    <div class="status-buttons">
+      {% for s in ['todo', 'doing', 'done'] %}
+        {{ post_button(url_for('web.change_status', task_id=task.id), status_labels[s], {'status': s}, cls='primary' if task.status == s else '', title='Move to ' ~ status_labels[s]) }}
+      {% endfor %}
+    </div>
+    <div class="actions">
+      {{ post_button(url_for('web.print_task', task_id=task.id), '⎙ Reprint card') }}
+      <a class="button" href="{{ url_for('web.edit_task', task_id=task.id) }}">Edit</a>
+      <form method="post" action="{{ url_for('web.delete_task', task_id=task.id) }}" class="inline" onsubmit="return confirm('Delete #{{ task.id }}?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="danger">Delete</button>
+      </form>
+    </div>
+    <dl class="meta">
+      <dt>Created</dt><dd><time datetime="{{ task.created_at }}">{{ task.created_at[:16].replace('T', ' ') }} UTC</time></dd>
+      {% if task.last_printed_at %}<dt>Last printed</dt><dd>{{ task.last_printed_at[:16].replace('T', ' ') }} UTC</dd>{% endif %}
+      {% if task.completed_at %}<dt>Completed</dt><dd>{{ task.completed_at[:16].replace('T', ' ') }} UTC</dd>{% endif %}
+      {% if task.recurrence != 'none' %}<dt>Repeats</dt><dd>{{ task.recurrence }}</dd>{% endif %}
+      {% if task.source_ref %}<dt>Source</dt><dd>{{ task.source_ref }}</dd>{% endif %}
+    </dl>
+  </section>
+  <aside class="panel preview">
+    <h2>Printed card</h2>
+    <div class="paper"><img alt="Card for #{{ task.id }}" src="{{ url_for('web.card_png', task_id=task.id) }}"></div>
+  </aside>
+</div>
+{% endblock %}

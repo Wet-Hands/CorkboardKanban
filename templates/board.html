@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% from "_macros.html" import post_button, due_label, source_tag with context %}
+{% block content %}
+<div class="board">
+  {% for status in ['todo', 'doing', 'done'] %}
+  <section class="column" id="col-{{ status }}">
+    <h2>{{ status_labels[status] }} <span class="count">{{ columns[status]|length }}</span></h2>
+    {% for task in columns[status] %}
+      <article class="note prio-{{ task.priority }} {{ 'is-done' if task.status == 'done' }}">
+        <div class="note-head">
+          <span class="prio">{{ task.priority }}</span>
+          {{ source_tag(task) }}
+          <span class="id">#{{ task.id }}</span>
+        </div>
+        <a class="note-title" href="{{ url_for('web.task_detail', task_id=task.id) }}">{{ task.title }}</a>
+        {% if task.description %}<p class="note-desc">{{ task.description|truncate(140) }}</p>{% endif %}
+        {{ due_label(task) }}
+        <div class="note-actions">
+          {% if status == 'doing' %}{{ post_button(url_for('web.change_status', task_id=task.id), '←', {'status': 'todo'}, title='Back to To do') }}{% endif %}
+          {% if status == 'done' %}{{ post_button(url_for('web.change_status', task_id=task.id), '↺', {'status': 'todo'}, title='Reopen') }}{% endif %}
+          {% if status == 'todo' %}{{ post_button(url_for('web.change_status', task_id=task.id), 'Start →', {'status': 'doing'}, title='Move to Doing') }}{% endif %}
+          {% if status != 'done' %}{{ post_button(url_for('web.change_status', task_id=task.id), '✓ Done', {'status': 'done'}, cls='ok', title='Mark done') }}{% endif %}
+          {{ post_button(url_for('web.print_task', task_id=task.id), '⎙', title='Reprint card') }}
+        </div>
+      </article>
+    {% else %}
+      <p class="empty">{% if status == 'todo' %}Nothing to do. <a href="{{ url_for('web.new_task') }}">Add a task</a>{% elif status == 'doing' %}Nothing in progress.{% else %}Nothing finished yet.{% endif %}</p>
+    {% endfor %}
+  </section>
+  {% endfor %}
+</div>
+<div class="board-footer">
+  {{ post_button(url_for('web.print_digest'), 'Print today\'s digest', title='Print the morning digest now') }}
+  <a href="{{ url_for('web.digest_png') }}" target="_blank" rel="noopener">Preview digest</a>
+</div>
+{% endblock %}

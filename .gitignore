@@ -1,0 +1,16 @@
+# Secrets
+.env
+
+# Runtime data: database, dry-run cards, backups
+data/
+*.db
+*.db-shm
+*.db-wal
+*.png
+!docs/*.png
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/

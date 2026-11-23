@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#b5835a">
+  <title>{% block title %}Corkboard{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('web.board') }}">Corkboard</a>
+    <nav>
+      <a href="{{ url_for('web.board') }}" class="{{ 'active' if request.endpoint == 'web.board' }}">Board</a>
+      <a href="{{ url_for('web.queue') }}" class="{{ 'active' if request.endpoint == 'web.queue' }}">
+        Queue{% if queue_counts.get('pending') %} <span class="count">{{ queue_counts.pending }}</span>{% endif %}
+        {% if queue_counts.get('failed') %} <span class="count bad">{{ queue_counts.failed }}</span>{% endif %}
+      </a>
+      <a href="{{ url_for('web.new_task') }}" class="button primary">+ Task</a>
+    </nav>
+  </header>
+  {% if not printer_status.available %}
+    <div class="banner warn">Printer not connected ({{ printer_status.device }}). Cards will wait in the queue and print once it's back.</div>
+  {% elif not printer_status.writable %}
+    <div class="banner warn">No permission to write to {{ printer_status.device }}. See the README for the udev rule.</div>
+  {% endif %}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flashes">
+        {% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+  <main>{% block content %}{% endblock %}</main>
+</body>
+</html>

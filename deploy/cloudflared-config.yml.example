@@ -1,0 +1,12 @@
+# /etc/cloudflared/config.yml — only needed if you use Cloudflare Tunnel.
+# Create the tunnel first:  cloudflared tunnel login && cloudflared tunnel create corkboard
+# then:                     cloudflared tunnel route dns corkboard corkboard.example.com
+tunnel: <TUNNEL-UUID>
+credentials-file: /etc/cloudflared/<TUNNEL-UUID>.json
+
+ingress:
+  # Publish only the Claude connector and the GitHub webhook. The board itself stays on your LAN.
+  - hostname: corkboard.example.com
+    path: ^/(mcp|github)(/.*)?$
+    service: http://127.0.0.1:8000
+  - service: http_status:404
