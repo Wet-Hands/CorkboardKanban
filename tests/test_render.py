@@ -46,3 +46,21 @@ def test_digest_empty_and_full(today):
 
 def test_png_bytes():
     assert render.to_png(render.render_card(_task())).startswith(b"\x89PNG")
+
+
+def test_human_date_adds_year_outside_current_year():
+    from datetime import date
+
+    ref = date(2026, 11, 24)
+    assert render.human_date(date(2026, 11, 28), ref) == "Sat Nov 28"
+    assert render.human_date(date(2027, 1, 1), ref) == "Fri Jan 1, 2027"
+    assert render.human_date(date(2025, 12, 31), ref) == "Wed Dec 31, 2025"
+
+
+def test_every_priority_gets_the_same_solid_header():
+    def header_ink(priority):
+        img = render.render_card(_task(priority=priority)).convert("L")
+        row = [img.getpixel((x, render.MARGIN + 2)) for x in range(render.MARGIN, img.width - render.MARGIN)]
+        return sum(v == 0 for v in row) / len(row)
+
+    assert header_ink("high") == header_ink("medium") == header_ink("low") == 1.0

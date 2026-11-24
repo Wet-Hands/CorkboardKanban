@@ -144,8 +144,11 @@ def qr_image(data: str, max_px: int) -> Image.Image:
     return img.resize((modules * box, modules * box), Image.NEAREST)
 
 
-def human_date(value: date) -> str:
-    return f"{value:%a %b} {value.day}"
+def human_date(value: date, ref: date | None = None) -> str:
+    """"Fri Nov 28", with the year added when it isn't the current one ("Fri Jan 1, 2027")."""
+    ref = ref or today()
+    text = f"{value:%a %b} {value.day}"
+    return text if value.year == ref.year else f"{text}, {value.year}"
 
 
 def task_link(task: dict) -> str:
@@ -157,13 +160,7 @@ def render_card(task: dict, ref: date | None = None) -> Image.Image:
     c = Canvas()
 
     # 1. Priority header
-    priority = task["priority"]
-    if priority == "high":
-        c.bar("HIGH PRIORITY", font(28), solid=True)
-    elif priority == "medium":
-        c.bar("MEDIUM", font(26), solid=False)
-    else:
-        c.text_lines(["low"], font(24))
+    c.bar(f"{task['priority'].upper()} PRIORITY", font(28), solid=True)
     c.gap(10)
 
     # 2. Title
@@ -178,7 +175,7 @@ def render_card(task: dict, ref: date | None = None) -> Image.Image:
     if task.get("due_date"):
         c.gap(10)
         due = date.fromisoformat(task["due_date"])
-        c.text_lines([f"Due {human_date(due)}"], font(26))
+        c.text_lines([f"Due {human_date(due, ref)}"], font(26))
         banner = {"overdue": "OVERDUE", "today": "DUE TODAY", "tomorrow": "DUE TOMORROW"}.get(
             due_state(task, ref) or ""
         )
@@ -239,7 +236,7 @@ def render_digest(data: dict) -> Image.Image:
             marker = {"high": "!!", "medium": "!", "low": ""}[task["priority"]]
             label = f"#{task['id']} {marker} {task['title']}".replace("  ", " ")
             if heading == "OVERDUE":
-                label += f" ({human_date(date.fromisoformat(task['due_date']))})"
+                label += f" ({human_date(date.fromisoformat(task['due_date']), day)})"
             lines = fit_lines(wrap(label, entry_font, c.inner - 16), entry_font, c.inner - 16, 2)
             ascent, descent = entry_font.getmetrics()
             c.draw.rectangle([MARGIN, c.y + 8, MARGIN + 7, c.y + 15], fill=BLACK)
