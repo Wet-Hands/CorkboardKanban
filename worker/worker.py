@@ -65,6 +65,7 @@ def process_one() -> str:
 def run(stop: threading.Event) -> None:
     last_keepalive = 0.0
     was_offline = None
+    keepalive_ok = None
     while not stop.is_set():
         result = process_one()
         offline = result == "offline"
@@ -74,6 +75,7 @@ def run(stop: threading.Event) -> None:
             elif was_offline is not None:
                 log.info("Printer is back")
             was_offline = offline
+            keepalive_ok = None  # log the first keepalive after each (re)connect
         if result in ("printed", "skipped"):
             last_keepalive = time.monotonic()
             continue
@@ -81,7 +83,14 @@ def run(stop: threading.Event) -> None:
             stop.wait(OFFLINE_POLL_SECONDS)
             continue
         if config.PRINTER_KEEPALIVE_SECONDS and time.monotonic() - last_keepalive >= config.PRINTER_KEEPALIVE_SECONDS:
-            printer.keepalive()
+            sent = printer.keepalive()
+            if sent != keepalive_ok:
+                if sent:
+                    log.info("Keepalive running: sending %s every %ss",
+                             config.PRINTER_KEEPALIVE_COMMAND.hex(" "), config.PRINTER_KEEPALIVE_SECONDS)
+                else:
+                    log.warning("Keepalive not sent: %s", printer.last_keepalive_error)
+                keepalive_ok = sent
             last_keepalive = time.monotonic()
         stop.wait(IDLE_POLL_SECONDS)
 

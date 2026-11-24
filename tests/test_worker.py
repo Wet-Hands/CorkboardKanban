@@ -101,3 +101,38 @@ def test_scheduler_builds(monkeypatch):
     monkeypatch.setattr(config, "GITHUB_TOKEN", "x")
     sched = scheduler.build_scheduler()
     assert {job.id for job in sched.get_jobs()} == {"recurring", "digest", "reminders", "overdue", "github"}
+
+
+def test_keepalive_command_is_configurable(fresh_db, monkeypatch):
+    device = fresh_db / "lp0"
+    monkeypatch.setattr(config, "PRINTER_DRY_RUN", False)
+    monkeypatch.setattr(config, "PRINTER_DEVICE", str(device))
+    monkeypatch.setattr(config, "PRINTER_KEEPALIVE_COMMAND", bytes.fromhex("1b40"))
+    assert printer.keepalive() is False
+    assert printer.last_keepalive_error == "printer not connected"
+    device.write_bytes(b"")
+    assert printer.keepalive() is True and printer.last_keepalive_error is None
+    assert device.read_bytes() == b"\x1b\x40"
+    monkeypatch.setattr(config, "PRINTER_KEEPALIVE_COMMAND", b"")
+    assert printer.keepalive() is False  # empty command turns it off
+
+
+def test_worker_logs_keepalive(fresh_db, monkeypatch, caplog):
+    import threading
+
+    device = fresh_db / "lp0"
+    device.write_bytes(b"")
+    monkeypatch.setattr(config, "PRINTER_DRY_RUN", False)
+    monkeypatch.setattr(config, "PRINTER_DEVICE", str(device))
+    stop = threading.Event()
+    calls = []
+
+    def fake_keepalive():
+        calls.append(1)
+        stop.set()
+        return True
+
+    monkeypatch.setattr(printer, "keepalive", fake_keepalive)
+    with caplog.at_level("INFO", logger="corkboard.worker"):
+        worker.run(stop)
+    assert calls and "Keepalive running: sending 10 04 01" in caplog.text

@@ -79,11 +79,29 @@ The GEZHI micro-printer identifies as `28e9:0289` and appears as `/dev/usb/lp0` 
 |---|---|---|
 | `Permission denied: /dev/usb/lp0` | Device is `root:lp`, mode 660 | `install.sh` installs `deploy/99-h22-printer.rules` (mode 0666) and adds you to `lp`; log out and in |
 | `/dev/usb/lp0` missing | Printer is off, so `usblp` removed the node | Switch it on or replug it; queued jobs then print by themselves |
-| Disconnects ~86 s after connecting | The printer powers itself off | The worker sends a keepalive (`DLE EOT 1`) every 30 s while idle; external power or another cable also help |
+| Disconnects ~86 s after connecting | The printer powers itself off | The worker sends a keepalive (`DLE EOT 1` by default) every 30 s while idle. If it still disconnects, see [Keeping the printer awake](#keeping-the-printer-awake) |
 
 The board shows a banner while the printer is missing, and **Queue** lists every job, with retry for
 failed ones. A self-test page (hold FEED while powering on) shows the paper width and may list an
 auto-off setting.
+
+### Keeping the printer awake
+
+When the printer connects, the worker log says `Keepalive running: sending 10 04 01 every 30s`, or
+`Keepalive not sent: <reason>`. Check it with `journalctl -u corkboard-worker -f`.
+
+If the printer still drops off USB, find out whether some other command keeps it awake. This takes a
+few minutes per command and asks you to switch the printer off and on between tries:
+
+```bash
+sudo systemctl stop corkboard-worker && .venv/bin/python scripts/keepalive_test.py; sudo systemctl start corkboard-worker
+```
+
+It tries sending nothing (to time the auto-off) and then five candidate commands, and prints the
+`PRINTER_KEEPALIVE_COMMAND` and `PRINTER_KEEPALIVE_SECONDS` lines to put in `.env` for one that works.
+If the printer stays on even with nothing sent, the disconnects are power or cable, not auto-off. It
+also reports `vcgencmd get_throttled`. If nothing works, give the printer its own power supply, or
+look for an auto-off setting on the self-test page.
 
 The udev rule also creates `/dev/corkboard-printer`. Set `PRINTER_DEVICE=/dev/corkboard-printer` if
 you ever have more than one `lp` device.

@@ -64,6 +64,10 @@ PRINTER_FEED_LINES = _int("PRINTER_FEED_LINES", 4)
 PRINTER_THRESHOLD = _int("PRINTER_THRESHOLD", 160)
 # Send DLE EOT 1 this often while idle so the printer doesn't power itself off. 0 = off.
 PRINTER_KEEPALIVE_SECONDS = _int("PRINTER_KEEPALIVE_SECONDS", 30)
+# Bytes sent as the keepalive, in hex (default DLE EOT 1). Find one that works with
+# scripts/keepalive_test.py. PRINTER_KEEPALIVE_READ also reads the printer's reply.
+PRINTER_KEEPALIVE_COMMAND = bytes.fromhex(_str("PRINTER_KEEPALIVE_COMMAND", "100401").replace(" ", ""))
+PRINTER_KEEPALIVE_READ = _bool("PRINTER_KEEPALIVE_READ", False)
 PRINT_MAX_ATTEMPTS = _int("PRINT_MAX_ATTEMPTS", 5)
 PRINTED_DIR = DATA_DIR / "printed"
 

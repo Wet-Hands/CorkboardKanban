@@ -20,7 +20,15 @@ import config
 
 log = logging.getLogger(__name__)
 
-KEEPALIVE = b"\x10\x04\x01"  # DLE EOT 1: transmit printer status
+# Commands worth trying as a keepalive (scripts/keepalive_test.py tries each one).
+KEEPALIVE_COMMANDS = {
+    "dle-eot": "100401",   # DLE EOT 1: real-time status request (the default)
+    "gs-r": "1d7201",      # GS r 1: transmit paper sensor status
+    "esc-at": "1b40",      # ESC @: initialize printer (harmless while idle)
+    "feed0": "1b4a00",     # ESC J 0: print buffer and feed 0 dots (counts as printing on some models)
+    "nul": "00",           # a single NUL byte
+}
+KEEPALIVE = bytes.fromhex(KEEPALIVE_COMMANDS["dle-eot"])
 
 
 class PrinterUnavailable(Exception):
@@ -103,20 +111,49 @@ def print_image(img: Image.Image, label: str = "card") -> None:
             pass
 
 
-def keepalive() -> bool:
-    """Send a status query so the printer stays awake. Returns True if it was sent."""
-    if config.PRINTER_DRY_RUN or not os.path.exists(config.PRINTER_DEVICE):
-        return False
+def send_raw(device: str, data: bytes, read_reply: bool = False, timeout: float = 0.5) -> bytes:
+    """Write bytes straight to the device; optionally read back a status reply.
+
+    Raises FileNotFoundError / OSError if the printer is gone. Returns the reply (b"" if none).
+    """
+    import select
+
+    flags = (os.O_RDWR if read_reply else os.O_WRONLY) | os.O_NONBLOCK
+    fd = os.open(device, flags)
     try:
-        fd = os.open(config.PRINTER_DEVICE, os.O_WRONLY | os.O_NONBLOCK)
-    except OSError as exc:
-        log.debug("Keepalive skipped: %s", exc)
-        return False
-    try:
-        os.write(fd, KEEPALIVE)
-        return True
-    except OSError as exc:
-        log.debug("Keepalive write failed: %s", exc)
-        return False
+        if data:
+            os.write(fd, data)
+        if not read_reply:
+            return b""
+        ready, _, _ = select.select([fd], [], [], timeout)
+        if not ready:
+            return b""
+        try:
+            return os.read(fd, 64)
+        except BlockingIOError:
+            return b""
     finally:
         os.close(fd)
+
+
+last_keepalive_error: str | None = None
+
+
+def keepalive() -> bool:
+    """Send the keepalive command so the printer stays awake. Returns True if it was sent.
+
+    The failure reason, if any, is kept in `last_keepalive_error` for the worker to log.
+    """
+    global last_keepalive_error
+    if config.PRINTER_DRY_RUN or not config.PRINTER_KEEPALIVE_COMMAND:
+        return False
+    if not os.path.exists(config.PRINTER_DEVICE):
+        last_keepalive_error = "printer not connected"
+        return False
+    try:
+        send_raw(config.PRINTER_DEVICE, config.PRINTER_KEEPALIVE_COMMAND, config.PRINTER_KEEPALIVE_READ)
+    except OSError as exc:
+        last_keepalive_error = str(exc)
+        return False
+    last_keepalive_error = None
+    return True
