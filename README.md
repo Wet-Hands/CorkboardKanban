@@ -109,7 +109,8 @@ you ever have more than one `lp` device.
 ## Cards
 
 Top to bottom: priority header (a solid bar reading HIGH, MEDIUM or LOW PRIORITY), title,
-description, due date (with the year when it isn't this year) a DUE TODAY / DUE TOMORROW / OVERDUE banner, then the task number, a
+description, due date (with the year when it isn't this year) and a DUE TODAY / DUE TOMORROW / OVERDUE
+banner, then the task number, a
 source tag (PR, CLAUDE, RECURRING) and a QR code. The QR opens the task page, or the pull request
 itself for GitHub cards. The web app's preview is the same PNG that gets printed.
 
