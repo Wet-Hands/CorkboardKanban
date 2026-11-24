@@ -15,12 +15,12 @@ import qrcode
 from PIL import Image, ImageDraw, ImageFont
 
 import config
-from app.models import due_state, today
+from app.models import checklist, due_state, today
 
 BLACK, WHITE = 0, 255
 MARGIN = 8
 LINE = 3  # rule thickness; the printer needs >= 2 px
-MAX_DESCRIPTION_LINES = 14
+MAX_DESCRIPTION_LINES = 16
 SOURCE_TAGS = {"github": "PR", "claude": "CLAUDE", "recurring": "RECURRING"}
 
 _FONT_FILES = {
@@ -113,6 +113,57 @@ class Canvas:
             lines = fit_lines(lines, fnt, self.inner, max_lines)
         self.text_lines(lines, fnt, spacing=spacing, align=align)
 
+    def description(self, text: str, fnt, *, max_lines: int, spacing: int = 3) -> None:
+        """Wrapped text, with "- [ ] item" lines drawn as tick boxes to fill in with a pen."""
+        box = 24
+        indent = box + 10
+        rows: list[tuple[str, str, bool, bool]] = []  # (kind, text, checked, first line of an item)
+        pending_text: list[str] = []
+
+        def flush_text():
+            if pending_text:
+                for line in wrap("\n".join(pending_text), fnt, self.inner):
+                    rows.append(("text", line, False, False))
+                pending_text.clear()
+
+        for part in checklist(text):
+            if part["kind"] == "text":
+                pending_text.append(part["text"])
+                continue
+            flush_text()
+            for i, line in enumerate(wrap(part["text"], fnt, self.inner - indent)):
+                rows.append(("item", line, part["checked"], i == 0))
+        flush_text()
+        while rows and rows[-1][0] == "text" and not rows[-1][1]:
+            rows.pop()
+
+        if len(rows) > max_lines:
+            hidden_items = sum(1 for kind, _, _, first in rows[max_lines - 1:] if kind == "item" and first)
+            rows = rows[: max_lines - 1]
+            rows.append(("text", f"… {hidden_items} more" if hidden_items else "…", False, False))
+
+        ascent, descent = fnt.getmetrics()
+        line_height = ascent + descent + spacing
+        for kind, line, checked, first in rows:
+            if kind == "text":
+                self.draw.text((MARGIN, self.y), line, font=fnt, fill=BLACK)
+            else:
+                x = MARGIN + indent
+                if first:
+                    top = self.y + (ascent + descent - box) // 2
+                    rect = [MARGIN, top, MARGIN + box - 1, top + box - 1]
+                    if checked:
+                        self.draw.rectangle(rect, fill=BLACK)
+                        self.draw.line([(MARGIN + 5, top + 12), (MARGIN + 10, top + 18), (MARGIN + 19, top + 5)],
+                                       fill=WHITE, width=3)
+                    else:
+                        self.draw.rectangle(rect, outline=BLACK, width=LINE)
+                self.draw.text((x, self.y), line, font=fnt, fill=BLACK)
+                if checked:
+                    mid = self.y + (ascent + descent) // 2 + 1
+                    self.draw.line([(x, mid), (x + fnt.getlength(line), mid)], fill=BLACK, width=2)
+            self.y += line_height
+
     def rule(self, thickness: int = LINE) -> None:
         self.draw.rectangle([MARGIN, self.y, self.width - MARGIN - 1, self.y + thickness - 1], fill=BLACK)
         self.y += thickness
@@ -169,7 +220,7 @@ def render_card(task: dict, ref: date | None = None) -> Image.Image:
     # 3. Description
     if task.get("description"):
         c.gap(6)
-        c.paragraph(task["description"], font(22, "bold"), max_lines=MAX_DESCRIPTION_LINES, spacing=3)
+        c.description(task["description"], font(22, "bold"), max_lines=MAX_DESCRIPTION_LINES)
 
     # 4. Due date and banner
     if task.get("due_date"):

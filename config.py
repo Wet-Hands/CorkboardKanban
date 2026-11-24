@@ -76,6 +76,10 @@ PRIORITIES = ("low", "medium", "high")
 STATUSES = ("todo", "doing", "done")
 RECURRENCES = ("none", "daily", "weekdays", "weekly", "monthly")
 PRINT_ON_CREATE = _bool("PRINT_ON_CREATE", True)
+# Hold automatic prints during these hours, e.g. "22:00-07:00". Empty = no quiet hours.
+QUIET_HOURS = _str("QUIET_HOURS", "")
+# Let prints you start yourself in the web app go out during quiet hours.
+QUIET_HOURS_ALLOW_MANUAL = _bool("QUIET_HOURS_ALLOW_MANUAL", True)
 DIGEST_ENABLED = _bool("DIGEST_ENABLED", True)
 DIGEST_TIME = _str("DIGEST_TIME", "07:30")
 DIGEST_DAYS = _str("DIGEST_DAYS", "mon-sun")

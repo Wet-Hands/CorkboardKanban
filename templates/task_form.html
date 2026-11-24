@@ -9,7 +9,8 @@
       <input name="title" required maxlength="200" autofocus value="{{ values.title or '' }}" autocomplete="off">
     </label>
     <label>Description
-      <textarea name="description" rows="4" maxlength="2000">{{ values.description or '' }}</textarea>
+      <textarea name="description" rows="5" maxlength="2000">{{ values.description or '' }}</textarea>
+      <span class="hint">For a checklist, start lines with <code>- [ ]</code>. They print as boxes to tick.</span>
     </label>
     <div class="row">
       <label>Due date

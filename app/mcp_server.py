@@ -27,7 +27,9 @@ mcp = MCPServer(
         "Corkboard is the user's physical kanban board: every task is printed as a card on a "
         "thermal printer and pinned to a corkboard. Tasks have a title, optional description, "
         "optional due date (YYYY-MM-DD), priority (low, medium, high) and status (todo, doing, done). "
-        "Creating a task prints its card unless print_card is false. Use list_tasks to find task ids."
+        "Creating a task prints its card unless print_card is false. Use list_tasks to find task ids. "
+        "Description lines starting with '- [ ]' print as checklist boxes ('- [x]' for done items). "
+        "During the user's quiet hours, prints are held until morning; results then include held_until."
     ),
 )
 
@@ -65,6 +67,12 @@ def _anticipated(fn):
     return wrapper
 
 
+def _print_note(queued: bool) -> dict:
+    """Tell Claude when a queued print is waiting for quiet hours to end."""
+    until = models.quiet_until() if queued else None
+    return {"held_until": f"{until:%H:%M}"} if until else {}
+
+
 def _get(task_id: int) -> dict:
     task = models.get_task(task_id)
     if task is None:
@@ -85,12 +93,13 @@ def create_task(
     """Add a task to the board and (by default) print its card.
 
     due_date: YYYY-MM-DD, or "today", "tomorrow", a weekday name, or "+3d".
+    description: lines starting with "- [ ] " print as tick boxes (a checklist).
     recurrence: when the task is completed, a fresh card is created and printed on the next date.
     """
     task = models.create_task(
         title, description, due_date, priority, recurrence=recurrence, source="claude", print_card=print_card
     )
-    return {**_out(task), "card_queued": print_card}
+    return {**_out(task), "card_queued": print_card, **_print_note(print_card)}
 
 
 @mcp.tool(annotations=ToolAnnotations(title="List tasks", read_only_hint=True))
@@ -139,7 +148,7 @@ def update_task(
     task = models.update_task(task_id, **changes)
     if reprint:
         models.enqueue_print(task_id, "reprint")
-    return {**_out(task), "card_queued": reprint}
+    return {**_out(task), "card_queued": reprint, **_print_note(reprint)}
 
 
 @mcp.tool(annotations=ToolAnnotations(title="Complete task", destructive_hint=False, idempotent_hint=True))
@@ -156,7 +165,7 @@ def print_task(task_id: int) -> dict:
     """Print (or reprint) a task's card on the thermal printer."""
     task = _get(task_id)
     job = models.enqueue_print(task_id, "reprint")
-    return {"queued": True, "job_id": job["id"], "task": _out(task)}
+    return {"queued": True, "job_id": job["id"], "task": _out(task), **_print_note(True)}
 
 
 @mcp.tool(annotations=ToolAnnotations(title="Print daily digest", destructive_hint=False))
@@ -172,6 +181,7 @@ def print_daily_digest() -> dict:
         "due_today": len(data["today"]),
         "in_progress": len(data["doing"]),
         "high_priority": len(data["high"]),
+        **_print_note(True),
     }
 
 

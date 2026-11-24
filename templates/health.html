@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Health · Corkboard{% endblock %}
+{% block content %}
+<section class="health-head panel">
+  <h1>
+    <span class="dot {{ h.overall }}" aria-hidden="true"></span>
+    {% if h.overall == 'ok' %}Everything looks fine{% elif h.overall == 'warn' %}Something needs a look{% else %}Something's wrong{% endif %}
+  </h1>
+  <p class="hint">Checked {{ h.checked_at }}. <a href="{{ url_for('web.health_page') }}">Refresh</a></p>
+</section>
+<div class="health-grid">
+  {% for item in h['items'] %}
+  <section class="panel health-item state-{{ item.state }}">
+    <h2><span class="dot {{ item.state }}" aria-hidden="true"></span>{{ item.title }}
+      <span class="visually-hidden">({{ item.state }})</span></h2>
+    <p class="summary">{{ item.summary }}</p>
+    {% if item.details %}
+    <dl class="meta">
+      {% for label, value in item.details %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}
+    </dl>
+    {% endif %}
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -19,7 +19,7 @@
         <td>{{ job.id }}</td>
         <td>{% if job.kind == 'digest' %}Morning digest{% elif job.task_title %}<a href="{{ url_for('web.task_detail', task_id=job.task_id) }}">#{{ job.task_id }} {{ job.task_title|truncate(40) }}</a>{% else %}(deleted task){% endif %}</td>
         <td>{{ job.reason }}</td>
-        <td><span class="status-chip">{{ job.status }}</span>{% if job.last_error %}<br><small class="bad">{{ job.last_error }}</small>{% endif %}</td>
+        <td><span class="status-chip">{% if quiet and job.status == 'pending' and not (job.manual and quiet.manual_ok) %}held until {{ quiet.until }}{% else %}{{ job.status }}{% endif %}</span>{% if job.last_error %}<br><small class="bad">{{ job.last_error }}</small>{% endif %}</td>
         <td class="nowrap">
           {% if job.status == 'failed' %}{{ post_button(url_for('web.retry_job', job_id=job.id), 'Retry') }}{% endif %}
           {% if job.status in ('pending', 'failed') %}{{ post_button(url_for('web.cancel_job', job_id=job.id), 'Remove', cls='danger') }}{% endif %}

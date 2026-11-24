@@ -16,13 +16,18 @@
         Queue{% if queue_counts.get('pending') %} <span class="count">{{ queue_counts.pending }}</span>{% endif %}
         {% if queue_counts.get('failed') %} <span class="count bad">{{ queue_counts.failed }}</span>{% endif %}
       </a>
-      <a href="{{ url_for('web.new_task') }}" class="button primary">+ Task</a>
+      <a href="{{ url_for('web.health_page') }}" class="{{ 'active' if request.endpoint == 'web.health_page' }}">Health</a>
+      <a href="{{ url_for('web.new_task') }}" class="button primary" aria-label="New task">+<span class="nav-label"> Task</span></a>
     </nav>
   </header>
   {% if not printer_status.available %}
     <div class="banner warn">Printer not connected ({{ printer_status.device }}). Cards will wait in the queue and print once it's back.</div>
   {% elif not printer_status.writable %}
     <div class="banner warn">No permission to write to {{ printer_status.device }}. See the README for the udev rule.</div>
+  {% endif %}
+  {% if quiet %}
+    <div class="banner quiet">Quiet hours until {{ quiet.until }}{% if quiet.held %}: {{ quiet.held }} automatic print{{ 's' if quiet.held != 1 }} waiting{% endif %}.
+      {% if quiet.manual_ok %}Prints you start here still go out now.{% else %}All prints wait until then.{% endif %}</div>
   {% endif %}
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}

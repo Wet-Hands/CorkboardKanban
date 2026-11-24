@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS print_jobs (
     kind        TEXT NOT NULL CHECK (kind IN ('task','digest')),
     task_id     INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
     reason      TEXT NOT NULL DEFAULT '',       -- created, reprint, reminder, overdue, digest
+    manual      INTEGER NOT NULL DEFAULT 0,     -- started by a person in the web app (skips quiet hours)
     status      TEXT NOT NULL DEFAULT 'pending'
                 CHECK (status IN ('pending','printing','done','failed')),
     attempts    INTEGER NOT NULL DEFAULT 0,
@@ -53,6 +54,12 @@ CREATE TABLE IF NOT EXISTS seen_github_prs (
     skipped     INTEGER NOT NULL DEFAULT 0,     -- seen but no card (draft with GITHUB_DRAFT_MODE=skip)
     first_seen  TEXT NOT NULL,
     last_seen   TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS worker_status (     -- what the worker reports for the health page
+    key         TEXT PRIMARY KEY,
+    value       TEXT NOT NULL,                  -- JSON
+    updated_at  TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS github_deliveries (
@@ -99,7 +106,17 @@ def transaction() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+# Columns added after the first release, for databases created before them.
+MIGRATIONS = [
+    ("print_jobs", "manual", "INTEGER NOT NULL DEFAULT 0"),
+]
+
+
 def init_db() -> None:
     with get_conn() as conn:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(SCHEMA)
+        for table, column, definition in MIGRATIONS:
+            columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+            if column not in columns:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")

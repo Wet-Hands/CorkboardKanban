@@ -11,7 +11,22 @@
       <span class="id">#{{ task.id }}</span>
     </div>
     <h1>{{ task.title }}</h1>
-    {% if task.description %}<p class="desc">{{ task.description }}</p>{% endif %}
+    {% if task.description %}
+      <div class="desc">
+        {% for part in checklist(task.description) %}
+          {% if part.kind == 'item' %}
+            <form method="post" action="{{ url_for('web.toggle_check', task_id=task.id, line=part.line) }}" class="check-item">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="next" value="{{ request.path }}">
+              <button type="submit" role="checkbox" aria-checked="{{ 'true' if part.checked else 'false' }}"
+                      class="{{ 'checked' if part.checked }}" title="{{ 'Untick' if part.checked else 'Tick' }}">
+                <span class="box" aria-hidden="true">{{ '✓' if part.checked }}</span><span class="label">{{ part.text }}</span>
+              </button>
+            </form>
+          {% elif part.text %}<p>{{ part.text }}</p>{% endif %}
+        {% endfor %}
+      </div>
+    {% endif %}
     <p>{{ due_label(task) }}</p>
     {% if task.url %}<p><a href="{{ task.url }}" target="_blank" rel="noopener">{{ 'Open the pull request' if task.source == 'github' else task.url }} ↗</a></p>{% endif %}
     <div class="status-buttons">

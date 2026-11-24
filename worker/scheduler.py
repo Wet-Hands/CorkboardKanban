@@ -71,10 +71,15 @@ def reprint_overdue() -> int:
 def poll_github() -> None:
     from worker.github_poll import poll
 
+    from app.db import utcnow
+
     try:
-        poll()
-    except Exception:
+        result = poll()
+    except Exception as exc:
         log.exception("GitHub poll failed")
+        models.put_status("github", {"at": utcnow(), "ok": False, "error": f"{type(exc).__name__}: {exc}"[:300]})
+    else:
+        models.put_status("github", {"at": utcnow(), "ok": True, **result})
 
 
 def catch_up() -> None:

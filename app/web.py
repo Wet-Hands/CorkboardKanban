@@ -55,7 +55,17 @@ def register_template_helpers(app: Flask) -> None:
             "human_date": lambda iso: render.human_date(date.fromisoformat(iso)),
             "printer_status": printer.status(),
             "queue_counts": models.queue_counts(),
+            "quiet": _quiet_state(),
+            "checklist": models.checklist,
+            "checklist_progress": models.checklist_progress,
         }
+
+
+def _quiet_state() -> dict | None:
+    until = models.quiet_until()
+    if until is None:
+        return None
+    return {"until": f"{until:%H:%M}", "held": models.held_count(), "manual_ok": config.QUIET_HOURS_ALLOW_MANUAL}
 
 
 # --- Helpers ----------------------------------------------------------------------------
@@ -105,6 +115,7 @@ def new_task():
                 **fields,
                 status=request.form.get("status", "todo"),
                 print_card=bool(request.form.get("print_card")),
+                manual=True,
             )
         except ValueError as exc:
             flash(str(exc), "error")
@@ -133,7 +144,7 @@ def edit_task(task_id: int):
             flash(str(exc), "error")
             return render_template("task_form.html", task=task, values=fields, print_default=False), 400
         if request.form.get("print_card"):
-            models.enqueue_print(task_id, "reprint")
+            models.enqueue_print(task_id, "reprint", manual=True)
             flash(f"Saved #{task_id} and sent it to the printer.")
         else:
             flash(f"Saved #{task_id}.")
@@ -156,8 +167,18 @@ def change_status(task_id: int):
 @bp.post("/task/<int:task_id>/print")
 def print_task(task_id: int):
     _task_or_404(task_id)
-    models.enqueue_print(task_id, "reprint")
+    models.enqueue_print(task_id, "reprint", manual=True)
     flash(f"#{task_id} sent to the printer.")
+    return _back()
+
+
+@bp.post("/task/<int:task_id>/check/<int:line>")
+def toggle_check(task_id: int, line: int):
+    _task_or_404(task_id)
+    try:
+        models.toggle_checklist_item(task_id, line)
+    except ValueError as exc:
+        flash(str(exc), "error")
     return _back()
 
 
@@ -219,7 +240,7 @@ def cancel_job(job_id: int):
 
 @bp.post("/digest/print")
 def print_digest():
-    models.enqueue_digest()
+    models.enqueue_digest(manual=True)
     flash("Digest sent to the printer.")
     return _back()
 
@@ -227,6 +248,13 @@ def print_digest():
 @bp.get("/digest.png")
 def digest_png():
     return _png(render.render_digest(models.digest()))
+
+
+@bp.get("/health")
+def health_page():
+    from app import health
+
+    return render_template("health.html", h=health.gather())
 
 
 @bp.get("/healthz")

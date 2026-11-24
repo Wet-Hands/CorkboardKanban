@@ -114,6 +114,19 @@ banner, then the task number, a
 source tag (PR, CLAUDE, RECURRING) and a QR code. The QR opens the task page, or the pull request
 itself for GitHub cards. The web app's preview is the same PNG that gets printed.
 
+**Checklists.** Description lines that start with `- [ ]` print as tick boxes to fill in with a pen,
+and `- [x]` lines print ticked and struck through:
+
+```
+Leave by 9am Saturday.
+- [ ] Sleeping bags
+- [x] Firewood
+- [ ] Headlamps + spare batteries
+```
+
+The board shows progress (☑ 1/3), and the boxes on the task page can be ticked, which updates the
+description. Reprint the card to get the ticks on paper. Claude can write checklists too.
+
 ## Automations
 
 All times are in `CORKBOARD_TIMEZONE` and set in `.env`.
@@ -129,6 +142,31 @@ All times are in `CORKBOARD_TIMEZONE` and set in `.env`.
 
 If the worker restarts after 07:30, it catches up on that morning's recurring cards, and on the
 digest if it's less than two hours late.
+
+### Quiet hours
+
+Set `QUIET_HOURS=22:00-07:00` to stop the printer chattering at night. During those hours, automatic
+prints (GitHub cards, reminders, recurring cards, the digest, and anything Claude prints) wait in the
+queue and come out when quiet hours end. Prints you start yourself in the web app (adding a task with
+"Print the card now", Reprint, Print digest) still go out straight away, unless you set
+`QUIET_HOURS_ALLOW_MANUAL=false`. The board shows a banner while quiet hours are on, the Queue page
+marks held jobs, and Claude is told when a print is held. Make sure `DIGEST_TIME` is after quiet
+hours end, or the digest waits for them.
+
+## Health page
+
+**Health** in the top bar shows whether everything is working, on one screen:
+
+- **Worker:** running, or how long since it last reported (it reports every 15 s).
+- **Printer:** connected, for how long, and how many times it dropped off USB in the last 24 hours.
+- **Keepalive:** the command, how often, when it was last sent, and any error.
+- **Print queue:** waiting, held and failed jobs, and the last thing printed.
+- **Quiet hours**, the **schedule** (next digest, reminders, overdue reprint, GitHub poll) and the
+  **GitHub** poll's last result.
+- **Raspberry Pi:** CPU temperature, power problems reported by `vcgencmd get_throttled`
+  (under-voltage can drop the printer), free disk space and database size.
+
+`/healthz` gives a short JSON version for monitoring tools.
 
 ## GitHub pull request reviews
 
@@ -249,7 +287,8 @@ Run the tests:
 | `app/__init__.py`, `app/__main__.py` | Flask app factory; `python -m app` serves Flask and MCP together with uvicorn |
 | `app/db.py` | SQLite connection and tables: `tasks`, `print_jobs`, `seen_github_prs`, `github_deliveries` |
 | `app/models.py` | Task and queue functions; the single `create_task()` every source uses |
-| `app/web.py`, `templates/`, `static/style.css` | Board, task form with live card preview, task page (what the QR opens), print queue |
+| `app/web.py`, `templates/`, `static/style.css` | Board, task form with live card preview, task page (what the QR opens), print queue, health page |
+| `app/health.py` | Gathers everything the health page shows |
 | `app/render.py` | Pillow renderer for cards and the digest, with QR codes, as 1-bit images |
 | `app/printer.py` | Writes to `/dev/usb/lp0`, waits while the printer is off, keepalive, dry-run |
 | `app/mcp_server.py` | Claude connector tools and the combined ASGI app |

@@ -8,8 +8,9 @@ printing. The worker process is the only thing that talks to the printer.
 from __future__ import annotations
 
 import calendar
+import json
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 import config
@@ -109,6 +110,75 @@ def next_occurrence(base: date, recurrence: str) -> date:
     raise ValueError(f"Not a recurrence: {recurrence}")
 
 
+# --- Quiet hours ---------------------------------------------------------------------
+
+def parse_quiet_hours(text: str) -> tuple[time, time] | None:
+    """"22:00-07:00" -> (22:00, 07:00). Empty means no quiet hours."""
+    text = (text or "").strip()
+    if not text:
+        return None
+    match = re.fullmatch(r"(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})", text)
+    if not match:
+        raise ValueError(f"QUIET_HOURS must look like 22:00-07:00, not {text!r}")
+    h1, m1, h2, m2 = (int(g) for g in match.groups())
+    if h1 > 23 or h2 > 23 or m1 > 59 or m2 > 59:
+        raise ValueError(f"QUIET_HOURS has an impossible time: {text!r}")
+    start, end = time(h1, m1), time(h2, m2)
+    return None if start == end else (start, end)
+
+
+def quiet_until(now: datetime | None = None) -> datetime | None:
+    """When the current quiet hours end, or None if it isn't quiet hours now."""
+    window = parse_quiet_hours(config.QUIET_HOURS)
+    if window is None:
+        return None
+    start, end = window
+    now = now or datetime.now(config.TIMEZONE)
+    current = now.timetz().replace(tzinfo=None)
+    if start < end:  # e.g. 13:00-15:00
+        inside = start <= current < end
+        end_day = now.date()
+    else:  # wraps past midnight, e.g. 22:00-07:00
+        inside = current >= start or current < end
+        end_day = now.date() + timedelta(days=1) if current >= start else now.date()
+    if not inside:
+        return None
+    return datetime.combine(end_day, end, now.tzinfo)
+
+
+# --- Checklists ---------------------------------------------------------------------
+
+_CHECK_ITEM = re.compile(r"^\s*(?:[-*+]\s+)?\[( |x|X)\]\s+(.*\S)\s*$")
+
+
+def checklist(description: str) -> list[dict]:
+    """Split a description into text lines and checklist items ("- [ ] item", "- [x] done")."""
+    parts = []
+    for index, line in enumerate((description or "").split("\n")):
+        match = _CHECK_ITEM.match(line)
+        if match:
+            parts.append({"kind": "item", "line": index, "checked": match.group(1) != " ", "text": match.group(2)})
+        else:
+            parts.append({"kind": "text", "line": index, "text": line})
+    return parts
+
+
+def checklist_progress(description: str) -> tuple[int, int] | None:
+    items = [p for p in checklist(description) if p["kind"] == "item"]
+    return (sum(p["checked"] for p in items), len(items)) if items else None
+
+
+def toggle_checklist_item(task_id: int, line: int) -> dict:
+    task = require_task(task_id)
+    lines = task["description"].split("\n")
+    if not 0 <= line < len(lines) or not _CHECK_ITEM.match(lines[line]):
+        raise ValueError("That line isn't a checklist item.")
+    lines[line] = re.sub(
+        r"\[( |x|X)\]", lambda m: "[ ]" if m.group(1) != " " else "[x]", lines[line], count=1
+    )
+    return update_task(task_id, description="\n".join(lines))
+
+
 # --- Validation --------------------------------------------------------------------
 
 def _clean_title(title: Any) -> str:
@@ -152,6 +222,7 @@ def create_task(
     source_ref: str | None = None,
     url: str | None = None,
     print_card: bool | None = None,
+    manual: bool = False,
 ) -> dict:
     """Store a task and (by default) queue its card. Every task source uses this."""
     fields = {
@@ -176,7 +247,7 @@ def create_task(
         )
         task_id = cur.lastrowid
     if config.PRINT_ON_CREATE if print_card is None else print_card:
-        enqueue_print(task_id, "created")
+        enqueue_print(task_id, "created", manual=manual)
     return get_task(task_id)
 
 
@@ -348,41 +419,47 @@ def digest(ref: date | None = None) -> dict:
 
 # --- Print queue ----------------------------------------------------------------------
 
-def enqueue_print(task_id: int, reason: str = "reprint") -> dict:
-    """Queue a card. A task with a job already waiting isn't queued twice."""
+def _enqueue(conn, kind: str, task_id: int | None, reason: str, manual: bool) -> dict:
+    """Insert a job unless the same thing is already waiting; a manual request upgrades a waiting job."""
+    existing = conn.execute(
+        "SELECT * FROM print_jobs WHERE kind = ? AND task_id IS ? AND status = 'pending'", (kind, task_id)
+    ).fetchone()
+    if existing:
+        if manual and not existing["manual"]:
+            conn.execute("UPDATE print_jobs SET manual = 1 WHERE id = ?", (existing["id"],))
+        job_id = existing["id"]
+    else:
+        job_id = conn.execute(
+            "INSERT INTO print_jobs (kind, task_id, reason, manual, created_at) VALUES (?, ?, ?, ?, ?)",
+            (kind, task_id, reason, int(manual), utcnow()),
+        ).lastrowid
+    return dict(conn.execute("SELECT * FROM print_jobs WHERE id = ?", (job_id,)).fetchone())
+
+
+def enqueue_print(task_id: int, reason: str = "reprint", *, manual: bool = False) -> dict:
+    """Queue a card. A task with a job already waiting isn't queued twice.
+
+    `manual` marks a print a person asked for in the web app; it skips quiet hours.
+    """
     require_task(task_id)
     with transaction() as conn:
-        existing = conn.execute(
-            "SELECT * FROM print_jobs WHERE kind = 'task' AND task_id = ? AND status = 'pending'",
-            (int(task_id),),
-        ).fetchone()
-        if existing:
-            return dict(existing)
-        cur = conn.execute(
-            "INSERT INTO print_jobs (kind, task_id, reason, created_at) VALUES ('task', ?, ?, ?)",
-            (int(task_id), reason, utcnow()),
-        )
-        return dict(conn.execute("SELECT * FROM print_jobs WHERE id = ?", (cur.lastrowid,)).fetchone())
+        return _enqueue(conn, "task", int(task_id), reason, manual)
 
 
-def enqueue_digest() -> dict:
+def enqueue_digest(*, manual: bool = False) -> dict:
     with transaction() as conn:
-        existing = conn.execute(
-            "SELECT * FROM print_jobs WHERE kind = 'digest' AND status = 'pending'"
-        ).fetchone()
-        if existing:
-            return dict(existing)
-        cur = conn.execute(
-            "INSERT INTO print_jobs (kind, reason, created_at) VALUES ('digest', 'digest', ?)", (utcnow(),)
-        )
-        return dict(conn.execute("SELECT * FROM print_jobs WHERE id = ?", (cur.lastrowid,)).fetchone())
+        return _enqueue(conn, "digest", None, "digest", manual)
 
 
-def claim_next_job() -> dict | None:
+def claim_next_job(quiet: bool = False) -> dict | None:
+    """Take the next job that's due. During quiet hours only manual jobs are taken (if allowed)."""
     now = utcnow()
+    quiet_clause = ""
+    if quiet:
+        quiet_clause = "AND manual = 1" if config.QUIET_HOURS_ALLOW_MANUAL else "AND 0"
     with transaction() as conn:
         job = conn.execute(
-            """SELECT * FROM print_jobs WHERE status = 'pending'
+            f"""SELECT * FROM print_jobs WHERE status = 'pending' {quiet_clause}
                AND (not_before IS NULL OR not_before <= ?) ORDER BY id LIMIT 1""",
             (now,),
         ).fetchone()
@@ -441,6 +518,13 @@ def list_jobs(limit: int = 50) -> list[dict]:
         ).fetchall()]
 
 
+def held_count() -> int:
+    """Jobs that wait for quiet hours to end."""
+    with get_conn() as conn:
+        manual_clause = "AND manual = 0" if config.QUIET_HOURS_ALLOW_MANUAL else ""
+        return conn.execute(f"SELECT COUNT(*) FROM print_jobs WHERE status = 'pending' {manual_clause}").fetchone()[0]
+
+
 def queue_counts() -> dict[str, int]:
     with get_conn() as conn:
         rows = conn.execute("SELECT status, COUNT(*) AS n FROM print_jobs GROUP BY status").fetchall()
@@ -459,3 +543,20 @@ def retry_job(job_id: int) -> None:
 def cancel_job(job_id: int) -> None:
     with transaction() as conn:
         conn.execute("DELETE FROM print_jobs WHERE id = ? AND status IN ('pending','failed')", (int(job_id),))
+
+
+# --- Worker status (shown on the health page) -------------------------------------------
+
+def put_status(key: str, value: Any) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO worker_status (key, value, updated_at) VALUES (?, ?, ?)
+               ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at""",
+            (key, json.dumps(value), utcnow()),
+        )
+
+
+def get_statuses() -> dict[str, dict]:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM worker_status").fetchall()
+    return {r["key"]: {"value": json.loads(r["value"]), "updated_at": r["updated_at"]} for r in rows}
